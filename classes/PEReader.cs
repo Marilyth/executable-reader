@@ -1,14 +1,11 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 public class PEReader : ByteContainer
 {
-    private JsonSerializerOptions _options = new JsonSerializerOptions
-    {
-        WriteIndented = true,
-        IncludeFields = true
-    };
     private int _peHeaderOffset;
 
     public PEReader(byte[] data) : base(data)
@@ -28,7 +25,7 @@ public class PEReader : ByteContainer
 
     public void ReadSections()
     {
-        int sectionsOffset = _peHeaderOffset + Marshal.SizeOf<PEHeader>();
+        int sectionsOffset = _peHeaderOffset + Marshal.SizeOf<COFFHeader>() + Header.CoffHeader.SizeOfOptionalHeader;
 
         for (int i = 0; i < Header.CoffHeader.NumberOfSections; i++)
         {
@@ -45,6 +42,12 @@ public class PEReader : ByteContainer
 
     public override string ToString()
     {
-        return JsonSerializer.Serialize(this, _options);
+        StringBuilder sb = new();
+        sb.AppendLine($"PE Header:\n{Header}");
+        sb.AppendLine("Sections:");
+
+        sb.AppendLine(string.Join("\n\n", Sections.Select(s => s.ToString())));
+
+        return sb.ToString();
     }
 }

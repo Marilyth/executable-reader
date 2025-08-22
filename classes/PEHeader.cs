@@ -1,13 +1,25 @@
 
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct PEHeader
 {
+    private static JsonSerializerOptions _options = new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        IncludeFields = true
+    };
+
     public COFFHeader CoffHeader;
     public StandardCOFFFields StandardFields;
     public WindowsSpecificFields WindowsFields;
     public DataDirectories DataDirectories;
+
+    public override string ToString()
+    {
+        return JsonSerializer.Serialize(this, _options);
+    }
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
