@@ -40,14 +40,42 @@ public class PEReader : ByteContainer
         }
     }
 
+    public Section GetSectionForRVA(uint rva)
+    {
+        Section? section = Sections.FirstOrDefault(s =>
+            s.SectionDeclaration.VirtualAddress <= rva &&
+            (s.SectionDeclaration.VirtualAddress + s.SectionDeclaration.VirtualSize) > rva);
+
+        if (section == null)
+            throw new ArgumentException("Invalid RVA");
+
+        return section;
+    }
+
+    public uint RVAToRawAddress(uint rva)
+    {
+        Section section = GetSectionForRVA(rva);
+
+        // Calculate the virtual offset
+        uint offset = rva - section.SectionDeclaration.VirtualAddress;
+
+        return section.SectionDeclaration.PointerToRawData + offset;
+    }
+
     public override string ToString()
     {
-        StringBuilder sb = new();
-        sb.AppendLine($"PE Header:\n{Header}");
-        sb.AppendLine("Sections:");
+        List<string> segments = new();
+        segments.Add($"PE Header:\n{Header}");
 
-        sb.AppendLine(string.Join("\n\n", Sections.Select(s => s.ToString())));
+        uint entryPointAddress = Header.StandardFields.AddressOfEntryPoint;
+        segments.Add($"Entrypoint at section {GetSectionForRVA(entryPointAddress).SectionDeclaration.Name}\n" +
+                     $"virtual address 0x{entryPointAddress:X}\n" +
+                     $"raw address 0x{RVAToRawAddress(entryPointAddress):X}");
 
-        return sb.ToString();
+        segments.Add("Sections:");
+
+        segments.AddRange(Sections.Select(s => s.ToString()));
+
+        return string.Join("\n\n", segments);
     }
 }
