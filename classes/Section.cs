@@ -8,7 +8,7 @@ public class Section : ByteContainer
         SectionDeclaration = declaration;
     }
 
-    protected ReadOnlySpan<byte> SectionData
+    public ReadOnlySpan<byte> SectionData
         => Data.Slice((int)SectionDeclaration.PointerToRawData, (int)SectionDeclaration.SizeOfRawData);
 
     public SectionDeclaration SectionDeclaration { get; set; }

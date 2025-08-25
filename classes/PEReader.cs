@@ -1,8 +1,7 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Iced.Intel;
+using Decoder = Iced.Intel.Decoder;
 
 public class PEReader : ByteContainer
 {
@@ -62,20 +61,48 @@ public class PEReader : ByteContainer
         return section.SectionDeclaration.PointerToRawData + offset;
     }
 
-    public override string ToString()
+    public string Disassemble(Section codeSection)
     {
-        List<string> segments = new();
-        segments.Add($"PE Header:\n{Header}");
+        StringBuilder sb = new();
+        Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(codeSection.SectionData.ToArray()));
+
+        IntelFormatter formatter = new IntelFormatter();
+        StringOutput output = new();
+
+        while (decoder.IP < (ulong)codeSection.SectionData.Length)
+        {
+            Instruction instruction = decoder.Decode();
+            formatter.Format(instruction, output);
+            ulong rva = instruction.IP + codeSection.SectionDeclaration.VirtualAddress;
+            ulong rawAddress = instruction.IP + codeSection.SectionDeclaration.PointerToRawData;
+            string instructionMachineCode = BitConverter.ToString(codeSection.SectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
+
+            sb.AppendLine($"RAW 0x{rawAddress:X}, RVA 0x{rva:X}:\t\t{output.ToStringAndReset()} ({instructionMachineCode})");
+        }
+
+        return sb.ToString();
+    }
+
+    public void OutputInformation()
+    {
+        List<(string, string)> segments = new();
+        segments.Add((Header.ToString(), "Header"));
 
         uint entryPointAddress = Header.StandardFields.AddressOfEntryPoint;
-        segments.Add($"Entrypoint at section {GetSectionForRVA(entryPointAddress).SectionDeclaration.Name}\n" +
+        segments.Add(($"Entrypoint at section {GetSectionForRVA(entryPointAddress).SectionDeclaration.Name}\n" +
                      $"virtual address 0x{entryPointAddress:X}\n" +
-                     $"raw address 0x{RVAToRawAddress(entryPointAddress):X}");
+                     $"raw address 0x{RVAToRawAddress(entryPointAddress):X}", "EntryPoint"));
 
-        segments.Add("Sections:");
+        segments.Add((string.Join("\n\n", Sections.Select(s => s.ToString())), "Sections"));
 
-        segments.AddRange(Sections.Select(s => s.ToString()));
+        // Disassemble executable sections.
+        foreach (var section in Sections.Where(s => s.SectionDeclaration.Characteristics.HasFlag(SectionCharacteristics.IMAGE_SCN_MEM_EXECUTE)))
+        {
+            segments.Add((Disassemble(section), $"Disassembly_{section.SectionDeclaration.Name}"));
+        }
 
-        return string.Join("\n\n", segments);
+        foreach (var segment in segments) {
+            File.WriteAllText($"{segment.Item2}.txt", segment.Item1);
+        }
     }
 }
