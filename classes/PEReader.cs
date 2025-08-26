@@ -60,6 +60,8 @@ public class PEReader : ByteContainer
             Address = entryPointAddress,
         };
 
+        Annotations.AddAnnotation(entryPointPointer, "function: entry_point", 10);
+
         outputFiles.Add(($"Entrypoint at section {GetSectionForPointer(entryPointPointer).SectionDeclaration.Name}\n" +
                          $"virtual address 0x{entryPointAddress:X}\n" +
                          $"raw address 0x{VirtualToRawPointer(entryPointPointer).Address:X}", "EntryPoint"));
