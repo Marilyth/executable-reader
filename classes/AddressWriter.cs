@@ -35,15 +35,16 @@ public class AddressWriter
     public override string ToString()
     {
         StringBuilder sb = new StringBuilder();
+        int highestAddressLength = $"{Items.Max(kvp => kvp.Key.Address):X}".Length;
 
-        foreach (var annotation in Items)
+        foreach (var annotation in Items.OrderBy(kvp => kvp.Key.Address))
         {
             List<AddressAnnotation> orderedAnnotations = GetAnnotations(annotation.Key);
-            sb.AppendLine($"0x{annotation.Key.Address:X}:\t{orderedAnnotations.First().Text}");
-            
+            sb.AppendLine($"0x{annotation.Key.Address.ToString($"X{highestAddressLength}")}: {orderedAnnotations.First().Text}");
+
             foreach (var item in orderedAnnotations.Skip(1))
             {
-                sb.AppendLine($"\t{item.Text}");
+                sb.AppendLine(new string(' ', highestAddressLength + 4) + item.Text);
             }
         }
 

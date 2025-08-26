@@ -70,8 +70,9 @@ public class PEReader : ByteContainer
         foreach (var section in Sections.Where(s => s.SectionDeclaration.Characteristics.HasFlag(SectionCharacteristics.IMAGE_SCN_MEM_EXECUTE)))
         {
             FillAddressWriter(section);
-            outputFiles.Add((Annotations.ToString(), $"Disassembly_{section.SectionDeclaration.Name}"));
         }
+
+        outputFiles.Add((Annotations.ToString(), $"Disassembly"));
 
         Directory.CreateDirectory("output");
 
@@ -111,6 +112,8 @@ public class PEReader : ByteContainer
     private void FillAddressWriter(Section codeSection)
     {
         ReadOnlySpan<byte> sectionData = GetDataForSegment(codeSection.SectionSegment);
+        Annotations.AddAnnotation(codeSection.SectionSegment.Pointer, $"Start of section {codeSection.SectionDeclaration.Name}", int.MaxValue);
+
         Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(sectionData.ToArray()));
 
         IntelFormatter formatter = new IntelFormatter();
