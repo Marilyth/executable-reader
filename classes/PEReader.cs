@@ -130,10 +130,10 @@ public class PEReader : ByteContainer
             Annotations.AddAnnotation(rva, instruction.ToString());
             Annotations.AddAnnotation(rva, instructionMachineCode);
 
-            if (instruction.IsCallNear)
+            if (instruction.NearBranchTarget != 0)
             {
                 AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.NearBranchTarget + codeSection.SectionDeclaration.VirtualAddress };
-                Annotations.AddAnnotation(targetAddress, $"XREF 0x{rva.Address:X}", 1);
+                Annotations.AddAnnotation(targetAddress, $"XREF {instruction.Code} 0x{rva.Address:X}", 1);
             }
         }
     }
