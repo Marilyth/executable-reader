@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Iced.Intel;
@@ -13,6 +14,7 @@ public class PEReader : ByteContainer
         _peHeaderOffset = Data.IndexOf(searchPattern);
     }
 
+    public AddressWriter Annotations { get; set; } = new();
     public PEHeader Header { get; set; }
     public List<Section> Sections { get; set; } = new();
 
@@ -35,74 +37,101 @@ public class PEReader : ByteContainer
             SectionDeclaration section = Marshal.PtrToStructure<SectionDeclaration>(handle.AddrOfPinnedObject())!;
             handle.Free();
 
-            Sections.Add(new Section(section, _data));
+            Sections.Add(new Section(section));
         }
     }
 
-    public Section GetSectionForRVA(uint rva)
+    public ReadOnlySpan<byte> GetDataForSegment(ByteSegment segment)
     {
-        Section? section = Sections.FirstOrDefault(s =>
-            s.SectionDeclaration.VirtualAddress <= rva &&
-            (s.SectionDeclaration.VirtualAddress + s.SectionDeclaration.VirtualSize) > rva);
+        AddressPointer rawPointer = VirtualToRawPointer(segment.Pointer);
 
-        if (section == null)
-            throw new ArgumentException("Invalid RVA");
-
-        return section;
-    }
-
-    public uint RVAToRawAddress(uint rva)
-    {
-        Section section = GetSectionForRVA(rva);
-
-        // Calculate the virtual offset
-        uint offset = rva - section.SectionDeclaration.VirtualAddress;
-
-        return section.SectionDeclaration.PointerToRawData + offset;
-    }
-
-    public string Disassemble(Section codeSection)
-    {
-        StringBuilder sb = new();
-        Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(codeSection.SectionData.ToArray()));
-
-        IntelFormatter formatter = new IntelFormatter();
-        StringOutput output = new();
-
-        while (decoder.IP < (ulong)codeSection.SectionData.Length)
-        {
-            Instruction instruction = decoder.Decode();
-            formatter.Format(instruction, output);
-            ulong rva = instruction.IP + codeSection.SectionDeclaration.VirtualAddress;
-            ulong rawAddress = instruction.IP + codeSection.SectionDeclaration.PointerToRawData;
-            string instructionMachineCode = BitConverter.ToString(codeSection.SectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
-
-            sb.AppendLine($"RAW 0x{rawAddress:X}, RVA 0x{rva:X}:\t\t{output.ToStringAndReset()} ({instructionMachineCode})");
-        }
-
-        return sb.ToString();
+        return Data.Slice((int)rawPointer.Address, (int)segment.Size);
     }
 
     public void OutputInformation()
     {
-        List<(string, string)> segments = new();
-        segments.Add((Header.ToString(), "Header"));
+        List<(string, string)> outputFiles = new();
+        outputFiles.Add((Header.ToString(), "Header"));
 
         uint entryPointAddress = Header.StandardFields.AddressOfEntryPoint;
-        segments.Add(($"Entrypoint at section {GetSectionForRVA(entryPointAddress).SectionDeclaration.Name}\n" +
-                     $"virtual address 0x{entryPointAddress:X}\n" +
-                     $"raw address 0x{RVAToRawAddress(entryPointAddress):X}", "EntryPoint"));
+        AddressPointer entryPointPointer = new()
+        {
+            AddressType = AddressType.Virtual,
+            Address = entryPointAddress,
+        };
 
-        segments.Add((string.Join("\n\n", Sections.Select(s => s.ToString())), "Sections"));
+        outputFiles.Add(($"Entrypoint at section {GetSectionForPointer(entryPointPointer).SectionDeclaration.Name}\n" +
+                         $"virtual address 0x{entryPointAddress:X}\n" +
+                         $"raw address 0x{VirtualToRawPointer(entryPointPointer).Address:X}", "EntryPoint"));
+
+        outputFiles.Add((string.Join("\n\n", Sections.Select(s => s.ToString())), "Sections"));
 
         // Disassemble executable sections.
         foreach (var section in Sections.Where(s => s.SectionDeclaration.Characteristics.HasFlag(SectionCharacteristics.IMAGE_SCN_MEM_EXECUTE)))
         {
-            segments.Add((Disassemble(section), $"Disassembly_{section.SectionDeclaration.Name}"));
+            FillAddressWriter(section);
+            outputFiles.Add((Annotations.ToString(), $"Disassembly_{section.SectionDeclaration.Name}"));
         }
 
-        foreach (var segment in segments) {
-            File.WriteAllText($"{segment.Item2}.txt", segment.Item1);
+        Directory.CreateDirectory("output");
+
+        foreach (var file in outputFiles)
+        {
+            File.WriteAllText($"output/{file.Item2}.txt", file.Item1);
+        }
+    }
+
+    private Section GetSectionForPointer(AddressPointer pointer)
+    {
+        Section? section = Sections.FirstOrDefault(s => s.ContainsPointer(pointer));
+
+        if (section == null)
+            throw new ArgumentException("Invalid pointer");
+
+        return section;
+    }
+
+    private AddressPointer VirtualToRawPointer(AddressPointer pointer)
+    {
+        if (pointer.AddressType == AddressType.Raw)
+            return pointer;
+
+        Section section = GetSectionForPointer(pointer);
+
+        // Calculate the virtual offset
+        uint offset = pointer.Address - section.SectionDeclaration.VirtualAddress;
+
+        return new AddressPointer
+        {
+            AddressType = AddressType.Raw,
+            Address = section.SectionDeclaration.PointerToRawData + offset
+        };
+    }
+
+    private void FillAddressWriter(Section codeSection)
+    {
+        ReadOnlySpan<byte> sectionData = GetDataForSegment(codeSection.SectionSegment);
+        Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(sectionData.ToArray()));
+
+        IntelFormatter formatter = new IntelFormatter();
+        StringOutput output = new();
+
+        while (decoder.IP < codeSection.SectionSegment.Size)
+        {
+            Instruction instruction = decoder.Decode();
+            formatter.Format(instruction, output);
+            AddressPointer rva = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.IP + codeSection.SectionDeclaration.VirtualAddress };
+
+            string instructionMachineCode = BitConverter.ToString(sectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
+
+            Annotations.AddAnnotation(rva, instruction.ToString());
+            Annotations.AddAnnotation(rva, instructionMachineCode);
+
+            if (instruction.IsCallNear)
+            {
+                AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.NearBranchTarget + codeSection.SectionDeclaration.VirtualAddress };
+                Annotations.AddAnnotation(targetAddress, $"XREF 0x{rva.Address:X}", 1);
+            }
         }
     }
 }
