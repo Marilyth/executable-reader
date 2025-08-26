@@ -2,32 +2,42 @@ using System.Text;
 
 public class AddressAnnotation
 {
-    public AddressPointer Pointer { get; set; }
-    public string Text { get; set; }
+    public List<string> Entries { get; set; } = new();
+    public string Category { get; set; }
     public int Priority { get; set; }
 }
 
 public class AddressWriter
 {
-    private Dictionary<AddressPointer, List<AddressAnnotation>> Items = new();
+    private Dictionary<AddressPointer, string> Labels = new();
+    private Dictionary<AddressPointer, Dictionary<string, AddressAnnotation>> Items = new();
 
-    public void AddAnnotation(AddressPointer pointer, string text, int priority = 0)
+    public void SetLabel(AddressPointer pointer, string label)
+    {
+        Labels[pointer] = label;
+    }
+
+    public void AddAnnotation(AddressPointer pointer, string text, string category = "", int priority = 0)
     {
         if (!Items.ContainsKey(pointer))
-            Items[pointer] = new List<AddressAnnotation>();
+            Items[pointer] = new Dictionary<string, AddressAnnotation>();
 
-        Items[pointer].Add(new AddressAnnotation
+        if (!Items[pointer].ContainsKey(category))
         {
-            Pointer = pointer,
-            Text = text,
-            Priority = priority
-        });
+            Items[pointer][category] = new AddressAnnotation
+            {
+                Category = category,
+                Priority = priority
+            };
+        }
+
+        Items[pointer][category].Entries.Add(text);
     }
 
     public List<AddressAnnotation> GetAnnotations(AddressPointer pointer)
     {
         if (Items.ContainsKey(pointer))
-            return Items[pointer].OrderByDescending(a => a.Priority).ToList();
+            return Items[pointer].OrderByDescending(a => a.Value.Priority).Select(a => a.Value).ToList();
 
         return new List<AddressAnnotation>();
     }
@@ -35,16 +45,32 @@ public class AddressWriter
     public override string ToString()
     {
         StringBuilder sb = new StringBuilder();
-        int highestAddressLength = $"{Items.Max(kvp => kvp.Key.Address):X}".Length;
 
         foreach (var annotation in Items.OrderBy(kvp => kvp.Key.Address))
         {
             List<AddressAnnotation> orderedAnnotations = GetAnnotations(annotation.Key);
-            sb.AppendLine($"0x{annotation.Key.Address.ToString($"X{highestAddressLength}")}: {orderedAnnotations.First().Text}");
+            string label = Labels.ContainsKey(annotation.Key) ? Labels[annotation.Key] : string.Empty;
+            string prefix = $"0x{annotation.Key.Address:X}: ";
+            sb.AppendLine(prefix + label);
 
-            foreach (var item in orderedAnnotations.Skip(1))
+            for (int annotationIndex = 0; annotationIndex < orderedAnnotations.Count; annotationIndex++)
             {
-                sb.AppendLine(new string(' ', highestAddressLength + 4) + item.Text);
+                AddressAnnotation annotations = orderedAnnotations[annotationIndex];
+                string categoryPrefix = new string(' ', prefix.Length) + annotations.Category;
+
+                if (annotations.Category != string.Empty)
+                {
+                    categoryPrefix += $"[{annotations.Entries.Count}]";
+                    categoryPrefix += ": ";
+
+                    sb.AppendLine(categoryPrefix);
+                }
+
+                for (int entryIndex = 0; entryIndex < annotations.Entries.Count; entryIndex++)
+                {
+                    string entry = new string(' ', categoryPrefix.Length) + annotations.Entries[entryIndex];
+                    sb.AppendLine(entry);
+                }
             }
         }
 

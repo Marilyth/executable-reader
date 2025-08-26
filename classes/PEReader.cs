@@ -60,8 +60,6 @@ public class PEReader : ByteContainer
             Address = entryPointAddress,
         };
 
-        Annotations.AddAnnotation(entryPointPointer, "function: entry_point", 10);
-
         outputFiles.Add(($"Entrypoint at section {GetSectionForPointer(entryPointPointer).SectionDeclaration.Name}\n" +
                          $"virtual address 0x{entryPointAddress:X}\n" +
                          $"raw address 0x{VirtualToRawPointer(entryPointPointer).Address:X}", "EntryPoint"));
@@ -74,6 +72,7 @@ public class PEReader : ByteContainer
             FillAddressWriter(section);
         }
 
+        Annotations.SetLabel(entryPointPointer, "entry_point");
         outputFiles.Add((Annotations.ToString(), $"Disassembly"));
 
         Directory.CreateDirectory("output");
@@ -114,7 +113,7 @@ public class PEReader : ByteContainer
     private void FillAddressWriter(Section codeSection)
     {
         ReadOnlySpan<byte> sectionData = GetDataForSegment(codeSection.SectionSegment);
-        Annotations.AddAnnotation(codeSection.SectionSegment.Pointer, $"Start of section {codeSection.SectionDeclaration.Name}", int.MaxValue);
+        Annotations.AddAnnotation(codeSection.SectionSegment.Pointer, codeSection.SectionDeclaration.Name, "Start of section", int.MaxValue);
 
         Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(sectionData.ToArray()));
 
@@ -129,13 +128,14 @@ public class PEReader : ByteContainer
 
             string instructionMachineCode = BitConverter.ToString(sectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
 
-            Annotations.AddAnnotation(rva, instruction.ToString());
-            Annotations.AddAnnotation(rva, instructionMachineCode);
+            Annotations.AddAnnotation(rva, output.ToStringAndReset(), string.Empty);
+            Annotations.AddAnnotation(rva, instructionMachineCode, string.Empty);
 
             if (instruction.NearBranchTarget != 0)
             {
                 AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.NearBranchTarget + codeSection.SectionDeclaration.VirtualAddress };
-                Annotations.AddAnnotation(targetAddress, $"XREF {instruction.Code} 0x{rva.Address:X}", 1);
+                Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -1);
+                Annotations.SetLabel(targetAddress, $"LAB_{targetAddress.Address:X}");
             }
         }
     }
