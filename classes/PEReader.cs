@@ -113,7 +113,7 @@ public class PEReader : ByteContainer
     private void FillAddressWriter(Section codeSection)
     {
         ReadOnlySpan<byte> sectionData = GetDataForSegment(codeSection.SectionSegment);
-        Annotations.AddAnnotation(codeSection.SectionSegment.Pointer, codeSection.SectionDeclaration.Name, "Start of section", int.MaxValue);
+        Annotations.AddAnnotation(codeSection.SectionSegment.Pointer, codeSection.SectionDeclaration.Name, "Section", int.MaxValue);
 
         Decoder decoder = Decoder.Create(32, new ByteArrayCodeReader(sectionData.ToArray()));
 
@@ -128,14 +128,17 @@ public class PEReader : ByteContainer
 
             string instructionMachineCode = BitConverter.ToString(sectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
 
-            Annotations.AddAnnotation(rva, output.ToStringAndReset(), string.Empty);
-            Annotations.AddAnnotation(rva, instructionMachineCode, string.Empty);
+            Annotations.AddAnnotation(rva, $"{output.ToStringAndReset()} <- {instructionMachineCode}", string.Empty);
 
             if (instruction.NearBranchTarget != 0)
             {
                 AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.NearBranchTarget + codeSection.SectionDeclaration.VirtualAddress };
                 Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -1);
-                Annotations.SetLabel(targetAddress, $"LAB_{targetAddress.Address:X}");
+
+                if (instruction.Code.ToString().StartsWith("Call"))
+                    Annotations.SetLabel(targetAddress, $"FUN_{targetAddress.Address:X}");
+                else
+                    Annotations.SetLabel(targetAddress, $"LAB_{targetAddress.Address:X}");
             }
         }
     }
