@@ -43,9 +43,9 @@ public class AddressAnnotations
 
     public bool IsFunctionEnd()
     {
-        return Categories.ContainsKey(string.Empty) &&
+        return !Categories.ContainsKey(string.Empty) || (Categories.ContainsKey(string.Empty) &&
             (Categories[string.Empty].Entries.Any(e => e.Text == "ret") ||
-             Categories[string.Empty].Entries.Any(e => e.Text.StartsWith("jmp")));
+             Categories[string.Empty].Entries.Any(e => e.Text.StartsWith("jmp"))));
     }
 
     public bool IsFunctionStart()

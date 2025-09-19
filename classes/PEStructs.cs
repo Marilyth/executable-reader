@@ -112,3 +112,13 @@ public struct DataDirectories
     public uint SizeOfCLRRuntimeHeader;
     public ulong Padding;
 }
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct ImageImportDescriptor
+{
+    public uint OriginalFirstThunk { get; set; }
+    public uint TimeDateStamp { get; set; }
+    public uint ForwarderChain { get; set; }
+    public uint Name { get; set; }
+    public uint FirstThunk { get; set; }
+}

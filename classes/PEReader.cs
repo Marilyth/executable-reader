@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -17,6 +18,7 @@ public class PEReader : ByteContainer
     public AddressWriter Annotations { get; set; } = new();
     public PEHeader Header { get; set; }
     public List<Section> Sections { get; set; } = new();
+    public ImportTable ImportTable { get; set; }
 
     public void ReadPEHeader()
     {
@@ -41,11 +43,55 @@ public class PEReader : ByteContainer
         }
     }
 
+    public void ReadImports()
+    {
+        ImportTable = new ImportTable(Header.DataDirectories.ImportTable, Header.DataDirectories.SizeOfImportTable);
+        ImportTable.Parse(this);
+
+        // Mark the imports in the annotations.
+        foreach (var import in ImportTable.Imports)
+        {
+            foreach (var function in import.Functions)
+            {
+                Annotations.SetLabel(function.FunctionAddress.Pointer, $"{import.ImageName}::{function.Name}");
+            }
+        }
+    }
+
     public ReadOnlySpan<byte> GetDataForSegment(ByteSegment segment)
     {
         AddressPointer rawPointer = VirtualToRawPointer(segment.Pointer);
 
         return Data.Slice((int)rawPointer.Address, (int)segment.Size);
+    }
+
+    public ReadOnlySpan<byte> GetDataForSegment<T>(ArraySegment<T> segment)
+    {
+        // This is a null terminated array.
+        if (segment.ByteLength is null)
+        {
+            AddressPointer rawPointer = VirtualToRawPointer(segment.Pointer);
+            uint stepSize = segment.StructSize;
+            uint currentAddress = rawPointer.Address;
+
+            // Find the length of the array by searching for the null terminator.
+            while (true)
+            {
+                ReadOnlySpan<byte> entryData = Data.Slice((int)currentAddress, (int)stepSize);
+                if (entryData.ToImmutableArray().All(a => a == 0))
+                    break;
+
+                currentAddress += stepSize;
+            }
+
+            segment.ByteLength = currentAddress - rawPointer.Address;
+        }
+
+        return GetDataForSegment(new ByteSegment
+        {
+            Pointer = segment.Pointer,
+            Size = segment.ByteLength.Value
+        });
     }
 
     public void OutputInformation()
@@ -65,6 +111,8 @@ public class PEReader : ByteContainer
                          $"raw address 0x{VirtualToRawPointer(entryPointPointer).Address:X}", "EntryPoint"));
 
         outputFiles.Add((string.Join("\n\n", Sections.Select(s => s.ToString())), "Sections"));
+
+        outputFiles.Add((ImportTable.ToString(), "Imports"));
 
         // Disassemble executable sections.
         foreach (var section in Sections.Where(s => s.SectionDeclaration.Characteristics.HasFlag(SectionCharacteristics.IMAGE_SCN_MEM_EXECUTE)))
@@ -139,6 +187,16 @@ public class PEReader : ByteContainer
                     Annotations.SetLabel(targetAddress, $"FUN_{targetAddress.Address:X}");
                 else
                     Annotations.SetLabel(targetAddress, $"LAB_{targetAddress.Address:X}");
+            }
+            else if (instruction.FarBranchSelector != 0)//rva.ToString() == "Virtual 0x3C10")
+            {
+                AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.FarBranchSelector };
+
+                if (!ImportTable.TableSegment.Contains(targetAddress))
+                    continue;
+
+                // This is a jump to an imported function.
+                Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -1);
             }
         }
     }
