@@ -4,9 +4,9 @@ public class CategoryEntry
 {
     public string Text { get; set; }
 
-    public string ToString(int indentationLevel)
+    public override string ToString()
     {
-        return new string(' ', indentationLevel) + Text;
+        return Text;
     }
 }
 
@@ -16,9 +16,11 @@ public class Category
     public string CategoryName { get; set; }
     public int Priority { get; set; }
 
-    public void BuildString(StringBuilder sb, int indentationLevel)
+    public override string ToString()
     {
-        string prefix = new string(' ', indentationLevel) + CategoryName;
+        StringBuilder sb = new StringBuilder();
+
+        string prefix = CategoryName;
 
         if (CategoryName != string.Empty)
         {
@@ -30,8 +32,15 @@ public class Category
 
         for (int entryIndex = 0; entryIndex < Entries.Count; entryIndex++)
         {
-            sb.AppendLine(Entries[entryIndex].ToString(entryIndex == 0 ? 0 : prefix.Length));
+            string entryString = Entries[entryIndex].ToString();
+
+            if (entryIndex != 0)
+                entryString = new string(' ', prefix.Length) + entryString;
+
+            sb.AppendLine(entryString);
         }
+
+        return sb.ToString().Trim();
     }
 }
 
@@ -87,18 +96,36 @@ public class AddressAnnotations
         Categories[category].Priority = priority;
     }
 
-    public void BuildString(StringBuilder sb)
+    public override string ToString()
     {
         List<Category> orderedCategories = Categories.Select(c => c.Value).OrderByDescending(c => c.Priority).ToList();
 
+        StringBuilder sb = new StringBuilder();
         string prefix = $"0x{AddressPointer.Address:X}: ";
-        sb.AppendLine(prefix + Label);
+
+        if (Label is not null)
+            sb.AppendLine(prefix + Label);
+        else
+            sb.Append(prefix);
 
         if (Target != null)
-            Categories[string.Empty].Entries.First().Text += $" // -> {Target.Label}";
+            Categories[string.Empty].Entries.First().Text += $"\t\t\t// -> {Target.Label}";
 
-        foreach (var category in orderedCategories)
-                category.BuildString(sb, prefix.Length);
+        for (int i = 0; i < orderedCategories.Count; i++)
+        {
+            string[] categoryExpressions = orderedCategories[i].ToString().Split(Environment.NewLine);
+            for (int j = 0; j < categoryExpressions.Length; j++)
+            {
+                string categoryLine = categoryExpressions[j];
+
+                if (i > 0 || Label is not null)
+                    categoryLine = new string(' ', prefix.Length) + categoryLine;
+
+                sb.AppendLine(categoryLine);
+            }
+        }
+
+        return sb.ToString().Trim();
     }
 }
 
@@ -134,14 +161,13 @@ public class AddressWriter
             }
                 
             if (_currentIndentationLevel == 0)
-                    annotation.BuildString(sb);
-                else
-                {
-                    StringBuilder indentedAnnotations = new StringBuilder();
-                    annotation.BuildString(indentedAnnotations);
-                    IEnumerable<string> lines = indentedAnnotations.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Select(l => new string('-', _currentIndentationLevel * 4) + l);
-                    sb.AppendLine(string.Join(Environment.NewLine, lines));
-                }
+                sb.AppendLine(annotation.ToString());
+            else
+            {
+                string annotationExpression = annotation.ToString();
+                IEnumerable<string> lines = annotationExpression.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Select(l => new string('-', _currentIndentationLevel * 4) + l);
+                sb.AppendLine(string.Join(Environment.NewLine, lines));
+            }
 
             if (_currentIndentationLevel > 0 && annotation.IsFunctionEnd())
             {
