@@ -157,6 +157,7 @@ public class AddressWriter
         {
             if (annotation.IsFunctionStart())
             {
+                sb.AppendLine();
                 _currentIndentationLevel++;
             }
                 
@@ -172,6 +173,7 @@ public class AddressWriter
             if (_currentIndentationLevel > 0 && annotation.IsFunctionEnd())
             {
                 _currentIndentationLevel--;
+                sb.AppendLine();
             }
         }
 
