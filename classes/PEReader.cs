@@ -176,17 +176,19 @@ public class PEReader : ByteContainer
 
             string instructionMachineCode = BitConverter.ToString(sectionData.Slice((int)instruction.IP, instruction.Length).ToArray()).Replace("-", " ");
 
-            Annotations.AddAnnotation(rva, $"{output.ToStringAndReset()} <- {instructionMachineCode}", string.Empty);
+            Annotations.AddAnnotation(rva, output.ToStringAndReset(), string.Empty);
 
             if (instruction.NearBranchTarget != 0)
             {
                 AddressPointer targetAddress = new() { AddressType = AddressType.Virtual, Address = (uint)instruction.NearBranchTarget + codeSection.SectionDeclaration.VirtualAddress };
-                Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -1);
+                Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -2);
 
                 if (instruction.Code.ToString().StartsWith("Call"))
                     Annotations.SetLabel(targetAddress, $"FUN_{targetAddress.Address:X}");
                 else
                     Annotations.SetLabel(targetAddress, $"LAB_{targetAddress.Address:X}");
+
+                Annotations.SetTarget(rva, targetAddress);
             }
             else if (instruction.FarBranchSelector != 0)//rva.ToString() == "Virtual 0x3C10")
             {
@@ -197,6 +199,7 @@ public class PEReader : ByteContainer
 
                 // This is a jump to an imported function.
                 Annotations.AddAnnotation(targetAddress, $"0x{rva.Address:X} ({instruction.Code})", "XREF", -1);
+                Annotations.SetTarget(rva, targetAddress);
             }
         }
     }
